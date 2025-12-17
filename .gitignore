@@ -3,6 +3,7 @@
 __pycache__/
 *.pyc
 *.session*
+telethon_session.session
 telegram_messages.db
 telegram_messages.csv
 chatgpt_export.jsonl
