@@ -606,17 +606,28 @@ def list_databases():
     # Check root directory
     for db in glob.glob("*.db"):
         if os.path.isfile(db) and not db.startswith("."):
-            dbs.append({"name": db, "path": db})
+            # Skip backup and archive databases
+            db_name = os.path.basename(db)
+            if "backup" not in db_name.lower() and "archive" not in db_name.lower():
+                dbs.append(db_name)
     # Check exports directory
     if os.path.exists("exports"):
         for db in glob.glob("exports/*.db"):
             if os.path.isfile(db):
-                dbs.append({"name": os.path.basename(db), "path": db})
+                db_name = os.path.basename(db)
+                if "backup" not in db_name.lower() and "archive" not in db_name.lower():
+                    dbs.append(db_name)
     # Check merged directory
     if os.path.exists("merged"):
         for db in glob.glob("merged/*.db"):
             if os.path.isfile(db):
-                dbs.append({"name": os.path.basename(db), "path": db})
+                db_name = os.path.basename(db)
+                if "backup" not in db_name.lower() and "archive" not in db_name.lower():
+                    dbs.append(db_name)
+    
+    # Sort and remove duplicates
+    dbs = sorted(set(dbs))
+    logger.info(f"Found {len(dbs)} database(s)")
     return {"databases": dbs}
 
 
