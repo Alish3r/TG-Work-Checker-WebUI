@@ -23,6 +23,306 @@ See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
 
 ---
 
+## How It Works
+
+### Step-by-Step Process
+
+#### 1. **Initialization & Configuration**
+   - Load environment variables from `.env` file
+   - Validate API credentials (`API_ID`, `API_HASH`)
+   - Parse chat identifier (username, @username, or t.me link)
+   - Extract topic/thread ID if present in URL
+   - Initialize or migrate SQLite database schema
+   - Load checkpoint (last message ID from previous run)
+
+#### 2. **Authentication**
+   - Connect to Telegram using Telethon client
+   - Check if session is authorized
+   - If not authorized:
+     - Prompt for phone number (first run only)
+     - Request and verify login code
+     - Handle 2FA password if enabled
+   - Store session for future runs
+
+#### 3. **Chat Validation**
+   - Resolve chat identifier to Telegram entity
+   - Verify access permissions
+   - Extract chat metadata (ID, title, description)
+   - Handle errors (private channels, invalid usernames)
+
+#### 4. **Message Scraping (Incremental)**
+   - **Pass A: New Messages (Fast)**
+     - Fetch messages since last checkpoint (`min_id`)
+     - Filter by date cutoff (`DAYS_BACK`)
+     - Batch process messages in memory
+     - Detect new vs. existing messages
+   
+   - **Pass B: Edit Detection (Slower)**
+     - Rescan recent window (`EDIT_LOOKBACK_DAYS`)
+     - Compare message content with database
+     - Detect edits, sender changes, reply updates
+     - Update existing records
+
+   - **Pass C: Deletion Detection (Best-Effort)**
+     - Mark messages as deleted if missing from recent fetch
+     - Only within configured window
+
+#### 5. **Database Operations**
+   - **Upsert Logic**: Insert new or update existing messages
+   - **Batch Writes**: Process messages in batches for performance
+   - **Conflict Resolution**: Handle duplicate message IDs
+   - **Transaction Management**: Commit in batches, rollback on errors
+   - **Checkpoint Update**: Save last message ID for next run
+
+#### 6. **Export Generation**
+   - **CSV Export**:
+     - Query all messages from database
+     - Apply deduplication if configured
+     - Write with UTF-8 BOM for Excel compatibility
+     - Only regenerate if changes detected
+   
+   - **JSONL Export** (ChatGPT-ready):
+     - Filter messages (min chars, hashtag-only, deleted, service)
+     - Clean and normalize text
+     - Apply deduplication options
+     - Write one JSON object per line
+
+#### 7. **Cleanup & Maintenance**
+   - Archive deleted files (3-month retention)
+   - Clean up old logs and temp files
+   - Vacuum databases to reclaim space
+   - Health checks and monitoring
+
+### Application Flowchart
+
+```mermaid
+flowchart TD
+    Start([Start Application]) --> LoadConfig[Load Configuration<br/>.env file]
+    LoadConfig --> ValidateConfig{Validate<br/>API Credentials}
+    ValidateConfig -->|Invalid| Error1[Error: Missing Credentials]
+    ValidateConfig -->|Valid| InitDB[Initialize Database<br/>Create/Migrate Schema]
+    
+    InitDB --> LoadCheckpoint[Load Checkpoint<br/>Last Message ID]
+    LoadCheckpoint --> ConnectTG[Connect to Telegram<br/>Telethon Client]
+    
+    ConnectTG --> CheckAuth{Session<br/>Authorized?}
+    CheckAuth -->|No| AuthFlow[Authentication Flow<br/>Phone + Code + 2FA]
+    AuthFlow --> CheckAuth
+    CheckAuth -->|Yes| ResolveChat[Resolve Chat Entity<br/>Validate Access]
+    
+    ResolveChat -->|Error| Error2[Error: Cannot Access Chat]
+    ResolveChat -->|Success| CalcCutoff[Calculate Date Cutoff<br/>NOW - DAYS_BACK]
+    
+    CalcCutoff --> PassA[Pass A: New Messages<br/>Since Last Checkpoint]
+    PassA --> FetchNew[Fetch Messages<br/>min_id = last_message_id]
+    FetchNew --> FilterDate{Message Date<br/>> Cutoff?}
+    FilterDate -->|No| PassB
+    FilterDate -->|Yes| ProcessMsg[Process Message<br/>Extract Metadata]
+    
+    ProcessMsg --> CheckExists{Message<br/>Exists in DB?}
+    CheckExists -->|No| InsertNew[Insert New Message]
+    CheckExists -->|Yes| UpdateExisting[Update Existing<br/>If Changed]
+    
+    InsertNew --> BatchWrite{Reached<br/>Batch Size?}
+    UpdateExisting --> BatchWrite
+    BatchWrite -->|No| FetchNew
+    BatchWrite -->|Yes| CommitBatch[Commit Batch<br/>to Database]
+    CommitBatch --> FetchNew
+    
+    PassB[Pass B: Edit Detection<br/>Rescan Recent Window] --> FetchRecent[Fetch Recent Messages<br/>EDIT_LOOKBACK_DAYS]
+    FetchRecent --> CompareContent[Compare with DB<br/>Detect Changes]
+    CompareContent --> HasChanges{Content<br/>Changed?}
+    HasChanges -->|Yes| UpdateEdit[Update Message<br/>Edit Date/Content]
+    HasChanges -->|No| PassC
+    UpdateEdit --> PassC
+    
+    PassC[Pass C: Deletion Detection<br/>Best-Effort] --> MarkDeleted[Mark Missing Messages<br/>as Deleted]
+    MarkDeleted --> UpdateCheckpoint[Update Checkpoint<br/>Save Last Message ID]
+    
+    UpdateCheckpoint --> CheckChanges{Changes<br/>Detected?}
+    CheckChanges -->|No| End([End: No Changes])
+    CheckChanges -->|Yes| ExportCSV[Export to CSV<br/>UTF-8 BOM]
+    
+    ExportCSV --> ExportJSONL{JSONL<br/>Configured?}
+    ExportJSONL -->|Yes| ExportJSONLFile[Export to JSONL<br/>Clean & Filter]
+    ExportJSONL -->|No| LogResults
+    ExportJSONLFile --> LogResults[Log Results<br/>New/Updated Counts]
+    
+    LogResults --> End
+    
+    Error1 --> End
+    Error2 --> End
+    
+    style Start fill:#90EE90
+    style End fill:#FFB6C1
+    style Error1 fill:#FF6B6B
+    style Error2 fill:#FF6B6B
+    style PassA fill:#87CEEB
+    style PassB fill:#DDA0DD
+    style PassC fill:#F0E68C
+    style ExportCSV fill:#98FB98
+    style ExportJSONLFile fill:#98FB98
+```
+
+### Web API Flowchart
+
+```mermaid
+flowchart TD
+    Start([API Request]) --> Route{Endpoint<br/>Type}
+    
+    Route -->|POST /validate| Validate[Validate Chat<br/>Check Existence]
+    Validate --> GetChatInfo[Get Chat Info<br/>Title, Description]
+    GetChatInfo --> ProbeHistory[Probe Message History<br/>Find Earliest Date]
+    ProbeHistory --> ReturnValidate[Return Validation<br/>Response]
+    
+    Route -->|POST /scrape| CreateJob[Create Job<br/>Generate Job ID]
+    CreateJob --> QueueJob[Queue Job<br/>Status: queued]
+    QueueJob --> StartAsync[Start Async Task<br/>Background Processing]
+    StartAsync --> ReturnJobID[Return Job ID]
+    
+    StartAsync --> RunScrape[Run Scraping Process<br/>Same as CLI Flow]
+    RunScrape --> UpdateProgress[Update Job Status<br/>scanned, new, updated]
+    UpdateProgress --> CompleteJob[Mark Job Complete<br/>Status: done]
+    
+    Route -->|GET /status/{job_id}| GetStatus[Get Job Status<br/>from Memory]
+    GetStatus --> ReturnStatus[Return Status<br/>JSON Response]
+    
+    Route -->|GET /download/{job_id}/{kind}| CheckJob{Job<br/>Complete?}
+    CheckJob -->|No| ErrorNotReady[Error: Job Not Ready]
+    CheckJob -->|Yes| GetFile[Get Export File<br/>CSV/JSONL/DB]
+    GetFile --> StreamFile[Stream File<br/>to Client]
+    
+    Route -->|GET /health| SystemHealth[Check System Health<br/>Disk Space, etc.]
+    SystemHealth --> ReturnHealth[Return Health<br/>Status]
+    
+    Route -->|GET /health/database/{db}| DBHealth[Check Database Health<br/>Integrity, Counts]
+    DBHealth --> ReturnDBHealth[Return DB Health<br/>Status]
+    
+    Route -->|DELETE /api/delete/{db}| ArchiveDB[Archive Database<br/>Move to Archive/]
+    ArchiveDB --> ArchiveRelated[Archive Related Files<br/>CSV, JSONL]
+    ArchiveRelated --> ReturnDelete[Return Success]
+    
+    ReturnValidate --> End([End])
+    ReturnJobID --> End
+    ReturnStatus --> End
+    StreamFile --> End
+    ReturnHealth --> End
+    ReturnDBHealth --> End
+    ReturnDelete --> End
+    ErrorNotReady --> End
+    
+    style Start fill:#90EE90
+    style End fill:#FFB6C1
+    style RunScrape fill:#87CEEB
+    style UpdateProgress fill:#DDA0DD
+    style CompleteJob fill:#98FB98
+    style ErrorNotReady fill:#FF6B6B
+```
+
+### Database Management Flowchart
+
+```mermaid
+flowchart TD
+    Start([Database Operation]) --> OpType{Operation<br/>Type}
+    
+    OpType -->|Merge| MergeStart[Start Merge Process]
+    MergeStart --> FindDBs[Find Source Databases<br/>By Chat Identifier]
+    FindDBs --> GroupDBs[Group by Chat<br/>Ignore Topic ID]
+    GroupDBs --> LoadMessages[Load All Messages<br/>From Sources]
+    LoadMessages --> DedupeHash[Calculate Hash<br/>For Each Message]
+    DedupeHash --> CheckDup{Hash<br/>Exists?}
+    CheckDup -->|Yes| SkipDup[Skip Duplicate]
+    CheckDup -->|No| InsertMsg[Insert to Target DB]
+    SkipDup --> NextMsg{More<br/>Messages?}
+    InsertMsg --> NextMsg
+    NextMsg -->|Yes| LoadMessages
+    NextMsg -->|No| CompleteMerge[Complete Merge<br/>Save to merged/]
+    
+    OpType -->|Backfill| BackfillStart[Start Backfill]
+    BackfillStart --> BypassCutoff[Bypass Date Cutoff<br/>Scrape All History]
+    BypassCutoff --> FetchAll[Fetch All Messages<br/>From Beginning]
+    FetchAll --> ProcessAll[Process All Messages<br/>Same as Normal Scrape]
+    ProcessAll --> UpdateCheckpoint2[Update Checkpoint<br/>Full History]
+    
+    OpType -->|Vacuum| VacuumStart[Start Vacuum]
+    VacuumStart --> VacuumDB[VACUUM Database<br/>Reclaim Space]
+    VacuumDB --> AnalyzeDB[ANALYZE Database<br/>Update Statistics]
+    
+    OpType -->|Cleanup| CleanupStart[Start Cleanup]
+    CleanupStart --> CheckArchives[Check Archive Files<br/>Age > 90 days?]
+    CheckArchives -->|Yes| DeleteOld[Delete Old Archives]
+    CheckArchives -->|No| CheckLogs[Check Log Files<br/>Age > 30 days?]
+    CheckLogs -->|Yes| DeleteLogs[Delete Old Logs]
+    CheckLogs -->|No| CheckTemp[Check Temp Files<br/>Age > 7 days?]
+    CheckTemp -->|Yes| DeleteTemp[Delete Temp Files]
+    CheckTemp -->|No| CompleteCleanup[Complete Cleanup]
+    
+    CompleteMerge --> End([End])
+    UpdateCheckpoint2 --> End
+    AnalyzeDB --> End
+    DeleteOld --> End
+    DeleteLogs --> End
+    DeleteTemp --> End
+    CompleteCleanup --> End
+    
+    style Start fill:#90EE90
+    style End fill:#FFB6C1
+    style MergeStart fill:#87CEEB
+    style BackfillStart fill:#DDA0DD
+    style VacuumStart fill:#F0E68C
+    style CleanupStart fill:#FFA07A
+```
+
+### Export Process Flowchart
+
+```mermaid
+flowchart TD
+    Start([Export Request]) --> ExportType{Export<br/>Format}
+    
+    ExportType -->|CSV| CSVStart[Start CSV Export]
+    CSVStart --> QueryDB[Query Database<br/>All Messages]
+    QueryDB --> CheckDedupCSV{Deduplication<br/>Enabled?}
+    CheckDedupCSV -->|Yes| DedupeCSV[Calculate Hash<br/>Remove Duplicates]
+    CheckDedupCSV -->|No| WriteCSV
+    DedupeCSV --> WriteCSV[Write CSV File<br/>UTF-8 BOM]
+    WriteCSV --> CompleteCSV[CSV Export Complete]
+    
+    ExportType -->|JSONL| JSONLStart[Start JSONL Export]
+    JSONLStart --> QueryDB2[Query Database<br/>All Messages]
+    QueryDB2 --> FilterDeleted{Include<br/>Deleted?}
+    FilterDeleted -->|No| FilterDeleted2[Filter Out<br/>Deleted Messages]
+    FilterDeleted -->|Yes| FilterService
+    FilterDeleted2 --> FilterService{Include<br/>Service?}
+    FilterService -->|No| FilterService2[Filter Out<br/>Service Messages]
+    FilterService -->|Yes| FilterMinChars
+    FilterService2 --> FilterMinChars{Min Chars<br/>> 0?}
+    FilterMinChars -->|Yes| FilterMinChars2[Filter by<br/>Min Characters]
+    FilterMinChars -->|No| FilterHashtag
+    FilterMinChars2 --> FilterHashtag{Skip<br/>Hashtag Only?}
+    FilterHashtag -->|Yes| FilterHashtag2[Filter Out<br/>Hashtag-Only Messages]
+    FilterHashtag -->|No| CleanText
+    FilterHashtag2 --> CleanText[Clean & Normalize<br/>Text Content]
+    CleanText --> CheckDedupJSONL{Deduplication<br/>Enabled?}
+    CheckDedupJSONL -->|Yes| DedupeJSONL[Calculate Hash<br/>Remove Duplicates]
+    CheckDedupJSONL -->|No| WriteJSONL
+    DedupeJSONL --> WriteJSONL[Write JSONL File<br/>One JSON per Line]
+    WriteJSONL --> CompleteJSONL[JSONL Export Complete]
+    
+    CompleteCSV --> End([End])
+    CompleteJSONL --> End
+    
+    style Start fill:#90EE90
+    style End fill:#FFB6C1
+    style CSVStart fill:#87CEEB
+    style JSONLStart fill:#DDA0DD
+    style WriteCSV fill:#98FB98
+    style WriteJSONL fill:#98FB98
+```
+
+> **Note:** These flowcharts are maintained and updated as new features are added. When functionality changes, the flowcharts will be updated to reflect the new process flow.
+
+---
+
 ## Output Files
 
 The scraper creates:
