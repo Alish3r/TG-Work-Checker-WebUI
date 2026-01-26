@@ -811,6 +811,7 @@ def read_root():
 
 def get_main_ui_html():
     """Generate the main UI HTML with dark theme."""
+    version = APP_VERSION
     return """
 <!DOCTYPE html>
 <html lang="en">
@@ -1203,7 +1204,7 @@ def get_main_ui_html():
         <!-- Footer -->
         <div style="text-align: center; margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--border); color: var(--text-secondary); font-size: 0.875rem;">
             <div style="display: flex; align-items: center; justify-content: center; gap: 1rem; flex-wrap: wrap;">
-                <span>Version """ + APP_VERSION + """</span>
+                <span>Version VERSION_PLACEHOLDER</span>
                 <span style="color: var(--border);">•</span>
                 <a href="https://github.com/Alish3r/TG-Work-Checker" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem;">
                     <svg class="icon" viewBox="0 0 24 24" style="width: 16px; height: 16px;">
@@ -1499,7 +1500,7 @@ def get_main_ui_html():
     </script>
 </body>
 </html>
-    """
+    """.replace("VERSION_PLACEHOLDER", version)
 
 
 @app.get("/test-dark-mode")
