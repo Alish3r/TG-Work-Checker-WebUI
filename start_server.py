@@ -56,7 +56,15 @@ def kill_processes_on_port(port: int):
         print(f"Error killing processes: {e}")
 
 def main():
-    port = int(os.getenv('PORT', '8000'))
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Start the TG Work Checker web server')
+    parser.add_argument('--port', type=int, default=None, 
+                       help='Port to run on (default: from PORT env var or 8001)')
+    args = parser.parse_args()
+    
+    # Determine port: CLI arg > env var > default
+    port = args.port or int(os.getenv('PORT', '8001'))
     
     print(f"Checking port {port}...")
     if is_port_in_use(port):
@@ -67,9 +75,12 @@ def main():
         if is_port_in_use(port):
             print(f"ERROR: Port {port} is still in use after cleanup.")
             print("Please manually stop processes using this port or use a different port.")
+            print(f"Try: python start_server.py --port {port + 1}")
             sys.exit(1)
     
     print(f"Port {port} is free. Starting server...")
+    print(f"Server will be available at: http://localhost:{port}/")
+    print("Press Ctrl+C to stop the server.\n")
     
     # Start uvicorn
     os.chdir(Path(__file__).parent)

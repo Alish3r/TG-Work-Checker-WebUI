@@ -13,7 +13,10 @@ import time
 
 from fastapi import FastAPI, HTTPException, Query, Request, Depends
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
-from fastapi.middleware.base import BaseHTTPMiddleware
+try:
+    from starlette.middleware.base import BaseHTTPMiddleware
+except ImportError:
+    from fastapi.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel, Field
 from telethon import TelegramClient
 from telethon.errors import UsernameInvalidError, UsernameNotOccupiedError, ChannelPrivateError
