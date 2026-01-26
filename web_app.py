@@ -5,12 +5,15 @@ import sqlite3
 import glob
 import shutil
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional, Dict
+from collections import defaultdict
 import re
 from pathlib import Path
+import time
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request, Depends
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel, Field
 from telethon import TelegramClient
 from telethon.errors import UsernameInvalidError, UsernameNotOccupiedError, ChannelPrivateError
@@ -32,6 +35,53 @@ app = FastAPI(
     version="0.3.0"
 )
 APP_VERSION = "0.3.0"
+
+# Rate limiting configuration
+RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "100"))  # requests per window
+RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", "60"))  # seconds
+
+# Simple in-memory rate limiter
+_rate_limit_store: Dict[str, list] = defaultdict(list)
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """Simple rate limiting middleware."""
+    
+    async def dispatch(self, request: Request, call_next):
+        # Skip rate limiting for health checks
+        if request.url.path in ["/health", "/health/"]:
+            return await call_next(request)
+        
+        # Get client IP
+        client_ip = request.client.host if request.client else "unknown"
+        
+        # Clean old entries
+        now = time.time()
+        _rate_limit_store[client_ip] = [
+            ts for ts in _rate_limit_store[client_ip]
+            if now - ts < RATE_LIMIT_WINDOW
+        ]
+        
+        # Check rate limit
+        if len(_rate_limit_store[client_ip]) >= RATE_LIMIT_REQUESTS:
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "error": "Rate limit exceeded",
+                    "message": f"Maximum {RATE_LIMIT_REQUESTS} requests per {RATE_LIMIT_WINDOW} seconds"
+                }
+            )
+        
+        # Add current request
+        _rate_limit_store[client_ip].append(now)
+        
+        # Process request
+        response = await call_next(request)
+        return response
+
+
+# Add rate limiting middleware
+app.add_middleware(RateLimitMiddleware)
 
 
 class ValidateRequest(BaseModel):

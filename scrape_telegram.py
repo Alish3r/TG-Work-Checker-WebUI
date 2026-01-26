@@ -4,6 +4,7 @@ import sqlite3
 import argparse
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import Optional, Dict, Any, Tuple
 from urllib.parse import urlparse
 
 from telethon import TelegramClient
@@ -25,7 +26,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def load_config(cli_args=None):
+def load_config(cli_args: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     # Load from .env if python-dotenv is available and file exists
     if load_dotenv is not None and os.path.exists(".env"):
         # Override any empty or pre-set values in the current process
@@ -313,7 +314,7 @@ def init_db(db_path: str):
     return conn
 
 
-def parse_chat_identifier(raw_identifier: str, topic_id_env=None):
+def parse_chat_identifier(raw_identifier: str, topic_id_env: Optional[int] = None) -> Tuple[str, Optional[int]]:
     """
     Supports plain usernames/IDs or full t.me links.
     If a message/topic id is present in the URL, use it as topic_id (thread).
@@ -335,11 +336,12 @@ def parse_chat_identifier(raw_identifier: str, topic_id_env=None):
     return identifier, topic_id
 
 
-def _topic_id_norm(topic_id):
+def _topic_id_norm(topic_id: Optional[int]) -> int:
+    """Normalize topic_id to int, returning -1 if None."""
     return int(topic_id) if topic_id is not None else -1
 
 
-async def fetch_messages(config):
+async def fetch_messages(config: Dict[str, Any]) -> None:
     api_id = config["api_id"]
     api_hash = config["api_hash"]
     session_name = config["session_name"]

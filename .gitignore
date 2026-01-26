@@ -52,6 +52,17 @@ archived/
 *.zip
 *.tar.gz
 
+# Backups
+backups/
+*.backup
+*_backup_*.db
+
+# Test files
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
 # Exports directory (keep structure, ignore contents)
 exports/*
 !exports/.gitkeep
