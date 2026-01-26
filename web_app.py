@@ -739,6 +739,691 @@ def cleanup_archives(days: int = Query(90, description="Number of days to keep a
         raise HTTPException(status_code=500, detail=f"Error cleaning up archives: {e}")
 
 
+@app.get("/", response_class=HTMLResponse)
+def read_root():
+    """Serve the main web UI."""
+    return get_main_ui_html()
+
+
+def get_main_ui_html():
+    """Generate the main UI HTML with dark theme."""
+    return """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TG Work Checker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --bg-primary: #0a0a0a;
+            --bg-secondary: #1a1a1a;
+            --bg-tertiary: #252525;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0a0;
+            --accent: #007aff;
+            --accent-hover: #0051d5;
+            --success: #34c759;
+            --warning: #ff9500;
+            --error: #ff3b30;
+            --border: #2a2a2a;
+            --shadow: rgba(0, 0, 0, 0.3);
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 3rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+        
+        .header p {
+            color: var(--text-secondary);
+            font-size: 1rem;
+        }
+        
+        .card {
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 20px var(--shadow);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 30px var(--shadow);
+        }
+        
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .icon {
+            width: 20px;
+            height: 20px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+        
+        .input-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        .input-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        
+        .input {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text-primary);
+            font-size: 1rem;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        
+        .input:focus {
+            outline: none;
+            border-color: var(--accent);
+            background: var(--bg-secondary);
+        }
+        
+        .input::placeholder {
+            color: var(--text-secondary);
+        }
+        
+        .btn {
+            padding: 0.875rem 1.5rem;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            text-decoration: none;
+        }
+        
+        .btn-primary {
+            background: var(--accent);
+            color: white;
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+            background: var(--accent-hover);
+            transform: translateY(-1px);
+        }
+        
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+        
+        .btn-secondary:hover:not(:disabled) {
+            background: var(--bg-secondary);
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        
+        .status {
+            padding: 1rem;
+            border-radius: 10px;
+            margin-bottom: 1rem;
+            display: none;
+        }
+        
+        .status.show {
+            display: block;
+        }
+        
+        .status-info {
+            background: rgba(0, 122, 255, 0.1);
+            border: 1px solid rgba(0, 122, 255, 0.3);
+            color: var(--accent);
+        }
+        
+        .status-success {
+            background: rgba(52, 199, 89, 0.1);
+            border: 1px solid rgba(52, 199, 89, 0.3);
+            color: var(--success);
+        }
+        
+        .status-error {
+            background: rgba(255, 59, 48, 0.1);
+            border: 1px solid rgba(255, 59, 48, 0.3);
+            color: var(--error);
+        }
+        
+        .loading {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: currentColor;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .progress {
+            margin-top: 1rem;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background: var(--bg-tertiary);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: var(--accent);
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .stat {
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--accent);
+        }
+        
+        .stat-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-top: 0.25rem;
+        }
+        
+        .downloads {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin-top: 1rem;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.3s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>TG Work Checker</h1>
+            <p>Telegram Message Scraper & Analyzer</p>
+        </div>
+        
+        <!-- Validation Card -->
+        <div class="card">
+            <div class="card-title">
+                <svg class="icon" viewBox="0 0 24 24">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                    <circle cx="12" cy="10" r="3"></circle>
+                </svg>
+                Validate Chat
+            </div>
+            <div class="input-group">
+                <label for="chat-input">Chat Link or Username</label>
+                <input type="text" id="chat-input" class="input" placeholder="https://t.me/cyprusithr/46679 or @username">
+            </div>
+            <div class="input-group">
+                <label for="topic-input">Topic ID (Optional)</label>
+                <input type="number" id="topic-input" class="input" placeholder="46679">
+            </div>
+            <button class="btn btn-primary" onclick="validateChat()">
+                <svg class="icon" viewBox="0 0 24 24">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                Validate
+            </button>
+            <div id="validate-status" class="status"></div>
+        </div>
+        
+        <!-- Scraping Card -->
+        <div class="card">
+            <div class="card-title">
+                <svg class="icon" viewBox="0 0 24 24">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Start Scraping
+            </div>
+            <div class="input-group">
+                <label for="scrape-chat">Chat Link or Username</label>
+                <input type="text" id="scrape-chat" class="input" placeholder="https://t.me/cyprusithr/46679">
+            </div>
+            <div class="input-group">
+                <label for="scrape-topic">Topic ID (Optional)</label>
+                <input type="number" id="scrape-topic" class="input" placeholder="46679">
+            </div>
+            <div class="input-group">
+                <label for="output-db">Output DB Name (Optional)</label>
+                <input type="text" id="output-db" class="input" placeholder="Leave blank for auto-naming">
+            </div>
+            <button class="btn btn-primary" onclick="startScrape()">
+                <svg class="icon" viewBox="0 0 24 24">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                Start Scraping
+            </button>
+            <div id="scrape-status" class="status"></div>
+            <div id="scrape-progress" class="progress hidden">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill"></div>
+                </div>
+                <div class="stats" id="scrape-stats"></div>
+            </div>
+        </div>
+        
+        <!-- Job Status Card -->
+        <div class="card hidden" id="job-card">
+            <div class="card-title">
+                <svg class="icon" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                Job Status
+            </div>
+            <div id="job-status-content"></div>
+            <div class="downloads" id="download-links"></div>
+        </div>
+        
+        <!-- Databases Card -->
+        <div class="card">
+            <div class="card-title">
+                <svg class="icon" viewBox="0 0 24 24">
+                    <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+                    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+                </svg>
+                Databases
+            </div>
+            <button class="btn btn-secondary" onclick="loadDatabases()">
+                <svg class="icon" viewBox="0 0 24 24">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+                Refresh
+            </button>
+            <div id="databases-list" style="margin-top: 1rem;"></div>
+        </div>
+    </div>
+    
+    <script>
+        let currentJobId = null;
+        let statusInterval = null;
+        
+        async function validateChat() {
+            const chat = document.getElementById('chat-input').value.trim();
+            const topic = document.getElementById('topic-input').value.trim();
+            const statusDiv = document.getElementById('validate-status');
+            
+            if (!chat) {
+                showStatus('validate-status', 'Please enter a chat link or username', 'error');
+                return;
+            }
+            
+            showStatus('validate-status', 'Validating...', 'info');
+            
+            try {
+                const response = await fetch('/validate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat: chat,
+                        topic_id: topic ? parseInt(topic) : null
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.ok) {
+                    let msg = `✓ Valid chat: ${data.chat_identifier}`;
+                    if (data.title) msg += ` - ${data.title}`;
+                    if (data.earliest_message_month_year) {
+                        msg += `\\nMessages dating back to ${data.earliest_message_month_year}`;
+                    }
+                    showStatus('validate-status', msg, 'success');
+                } else {
+                    showStatus('validate-status', 'Invalid chat or cannot access', 'error');
+                }
+            } catch (error) {
+                showStatus('validate-status', 'Error: ' + error.message, 'error');
+            }
+        }
+        
+        async function startScrape() {
+            const chat = document.getElementById('scrape-chat').value.trim();
+            const topic = document.getElementById('scrape-topic').value.trim();
+            const outputDb = document.getElementById('output-db').value.trim();
+            const statusDiv = document.getElementById('scrape-status');
+            
+            if (!chat) {
+                showStatus('scrape-status', 'Please enter a chat link or username', 'error');
+                return;
+            }
+            
+            showStatus('scrape-status', 'Starting scrape...', 'info');
+            document.getElementById('scrape-progress').classList.remove('hidden');
+            
+            try {
+                const response = await fetch('/scrape', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat: chat,
+                        topic_id: topic ? parseInt(topic) : null,
+                        mode: 'full',
+                        output_db: outputDb || null
+                    })
+                });
+                
+                const data = await response.json();
+                currentJobId = data.job_id;
+                
+                showStatus('scrape-status', 'Scraping started. Job ID: ' + currentJobId, 'info');
+                document.getElementById('job-card').classList.remove('hidden');
+                
+                // Start polling for status
+                if (statusInterval) clearInterval(statusInterval);
+                statusInterval = setInterval(checkJobStatus, 1000);
+                checkJobStatus();
+            } catch (error) {
+                showStatus('scrape-status', 'Error: ' + error.message, 'error');
+            }
+        }
+        
+        async function checkJobStatus() {
+            if (!currentJobId) return;
+            
+            try {
+                const response = await fetch(`/status/${currentJobId}`);
+                const data = await response.json();
+                
+                updateJobStatus(data);
+                
+                if (data.status === 'done' || data.status === 'error') {
+                    if (statusInterval) {
+                        clearInterval(statusInterval);
+                        statusInterval = null;
+                    }
+                }
+            } catch (error) {
+                console.error('Status check error:', error);
+            }
+        }
+        
+        function updateJobStatus(data) {
+            const contentDiv = document.getElementById('job-status-content');
+            const statsDiv = document.getElementById('scrape-stats');
+            const downloadsDiv = document.getElementById('download-links');
+            
+            let statusHtml = '';
+            let statsHtml = '';
+            let downloadsHtml = '';
+            
+            if (data.status === 'running') {
+                statusHtml = `<div class="status status-info show">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <span>Scraping in progress</span>
+                    </div>
+                </div>`;
+                
+                statsHtml = `
+                    <div class="stat">
+                        <div class="stat-value">${formatNumber(data.scanned)}</div>
+                        <div class="stat-label">Scanned</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">${formatNumber(data.new)}</div>
+                        <div class="stat-label">New</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">${formatNumber(data.updated)}</div>
+                        <div class="stat-label">Updated</div>
+                    </div>
+                `;
+            } else if (data.status === 'done') {
+                statusHtml = `<div class="status status-success show">
+                    ✓ Scraping completed successfully
+                </div>`;
+                
+                statsHtml = `
+                    <div class="stat">
+                        <div class="stat-value">${formatNumber(data.scanned)}</div>
+                        <div class="stat-label">Total Scanned</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">${formatNumber(data.new)}</div>
+                        <div class="stat-label">New Messages</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">${formatNumber(data.updated)}</div>
+                        <div class="stat-label">Updated</div>
+                    </div>
+                `;
+                
+                if (data.output_csv || data.output_jsonl || data.output_db) {
+                    downloadsHtml = '<div style="margin-top: 1rem; font-weight: 500;">Downloads:</div>';
+                    if (data.output_csv) {
+                        downloadsHtml += `<a href="/download/${data.job_id}/csv" class="btn btn-primary" download>
+                            <svg class="icon" viewBox="0 0 24 24">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            CSV
+                        </a>`;
+                    }
+                    if (data.output_jsonl) {
+                        downloadsHtml += `<a href="/download/${data.job_id}/jsonl" class="btn btn-primary" download>
+                            <svg class="icon" viewBox="0 0 24 24">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            JSONL
+                        </a>`;
+                    }
+                    if (data.output_db) {
+                        downloadsHtml += `<a href="/download/${data.job_id}/db" class="btn btn-primary" download>
+                            <svg class="icon" viewBox="0 0 24 24">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            Database
+                        </a>`;
+                    }
+                }
+            } else if (data.status === 'error') {
+                statusHtml = `<div class="status status-error show">
+                    ✗ Error: ${data.message || 'Unknown error'}
+                </div>`;
+            }
+            
+            contentDiv.innerHTML = statusHtml;
+            statsDiv.innerHTML = statsHtml;
+            downloadsDiv.innerHTML = downloadsHtml;
+        }
+        
+        async function loadDatabases() {
+            const listDiv = document.getElementById('databases-list');
+            listDiv.innerHTML = '<div class="loading"><div class="spinner"></div><span>Loading...</span></div>';
+            
+            try {
+                const response = await fetch('/api/databases');
+                const data = await response.json();
+                
+                if (data.databases && data.databases.length > 0) {
+                    let html = '<div style="display: grid; gap: 0.75rem;">';
+                    for (const db of data.databases) {
+                        html += `
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: var(--bg-tertiary); border-radius: 10px; border: 1px solid var(--border);">
+                                <div>
+                                    <div style="font-weight: 500;">${db}</div>
+                                    <div style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.25rem;">
+                                        <a href="#" onclick="showStats('${db}'); return false;" style="color: var(--accent); text-decoration: none;">View Stats</a>
+                                    </div>
+                                </div>
+                                <button class="btn btn-secondary" onclick="deleteDatabase('${db}')" style="padding: 0.5rem 1rem; font-size: 0.875rem;">
+                                    <svg class="icon" viewBox="0 0 24 24" style="width: 16px; height: 16px;">
+                                        <polyline points="3 6 5 6 21 6"></polyline>
+                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        `;
+                    }
+                    html += '</div>';
+                    listDiv.innerHTML = html;
+                } else {
+                    listDiv.innerHTML = '<div style="color: var(--text-secondary); text-align: center; padding: 2rem;">No databases found</div>';
+                }
+            } catch (error) {
+                listDiv.innerHTML = `<div class="status status-error show">Error: ${error.message}</div>`;
+            }
+        }
+        
+        async function showStats(dbName) {
+            try {
+                const response = await fetch(`/api/stats/${encodeURIComponent(dbName)}`);
+                const data = await response.json();
+                alert(`Database: ${dbName}\\nTotal Messages: ${formatNumber(data.total_messages || 0)}\\nEarliest: ${data.earliest_date || 'N/A'}\\nLatest: ${data.latest_date || 'N/A'}`);
+            } catch (error) {
+                alert('Error loading stats: ' + error.message);
+            }
+        }
+        
+        async function deleteDatabase(dbName) {
+            if (!confirm(`Archive database "${dbName}"? It will be kept for 3 months before permanent deletion.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/delete/${encodeURIComponent(dbName)}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    loadDatabases();
+                } else {
+                    const data = await response.json();
+                    alert('Error: ' + (data.detail || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        function showStatus(elementId, message, type) {
+            const div = document.getElementById(elementId);
+            div.className = `status status-${type} show`;
+            div.textContent = message;
+            div.style.whiteSpace = 'pre-line';
+        }
+        
+        function formatNumber(num) {
+            return num.toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',');
+        }
+        
+        // Load databases on page load
+        loadDatabases();
+    </script>
+</body>
+</html>
+    """
+
+
 @app.get("/test-dark-mode")
 def test_dark_mode():
     return {"status": "NEW DARK MODE CODE IS RUNNING", "version": APP_VERSION}
