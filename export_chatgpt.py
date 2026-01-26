@@ -2,6 +2,7 @@ import os
 import json
 import sqlite3
 import re
+import hashlib
 from urllib.parse import urlparse
 
 try:
@@ -50,6 +51,8 @@ def load_config():
     include_service = os.getenv("INCLUDE_SERVICE", "0") == "1"
     min_chars = int(os.getenv("MIN_CHARS", "0"))
     skip_hashtag_only = os.getenv("SKIP_HASHTAG_ONLY", "0") == "1"
+    dedupe = os.getenv("DEDUPE_EXPORT", "0") == "1"
+    dedupe_key = os.getenv("DEDUPE_KEY", "text")  # text | text+sender | text+sender+day
     days_back = int(os.getenv("DAYS_BACK", "30"))
 
     chat_identifier, topic_id_from_url = _parse_chat_identifier(chat_identifier_raw)
@@ -68,6 +71,8 @@ def load_config():
         "include_service": include_service,
         "min_chars": min_chars,
         "skip_hashtag_only": skip_hashtag_only,
+        "dedupe": dedupe,
+        "dedupe_key": dedupe_key,
         "days_back": days_back,
     }
 
@@ -133,6 +138,7 @@ def export_chatgpt_jsonl(cfg):
     conn.close()
 
     with open(cfg["out_path"], "w", encoding="utf-8") as f:
+        seen = set()
         for (
             chat_identifier,
             topic_id,
@@ -153,6 +159,18 @@ def export_chatgpt_jsonl(cfg):
                 continue
             if cfg.get("skip_hashtag_only") and cleaned and all(tok.startswith("#") for tok in cleaned.split()):
                 continue
+
+            if cfg.get("dedupe"):
+                day = (date or "")[:10]  # YYYY-MM-DD from ISO
+                key_parts = [cleaned]
+                if cfg.get("dedupe_key") in ("text+sender", "text+sender+day"):
+                    key_parts.append(sender_username or str(sender_id) or "")
+                if cfg.get("dedupe_key") == "text+sender+day":
+                    key_parts.append(day)
+                digest = hashlib.sha256("\n".join(key_parts).encode("utf-8")).hexdigest()
+                if digest in seen:
+                    continue
+                seen.add(digest)
 
             payload = {
                 "chat": chat_identifier,

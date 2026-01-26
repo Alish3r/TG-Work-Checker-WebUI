@@ -1,6 +1,8 @@
 import os
 import asyncio
 import sqlite3
+import argparse
+import logging
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
@@ -19,8 +21,11 @@ try:
 except ImportError:
     load_dotenv = None
 
+# Set up logging
+logger = logging.getLogger(__name__)
 
-def load_config():
+
+def load_config(cli_args=None):
     # Load from .env if python-dotenv is available and file exists
     if load_dotenv is not None and os.path.exists(".env"):
         # Override any empty or pre-set values in the current process
@@ -39,14 +44,24 @@ def load_config():
         except ValueError:
             raise ValueError(f"Environment variable {name} must be an integer, got: {value!r}")
 
+    cli_args = cli_args or {}
+
     api_id = env_int("API_ID")
     api_hash = getenv_robust("API_HASH")
-    session_name = getenv_robust("SESSION_NAME") or "telethon_session"
-    chat_identifier_raw = getenv_robust("CHAT_IDENTIFIER")
-    topic_id_env = env_int("TOPIC_ID")
-    output_db = getenv_robust("OUTPUT_DB") or "telegram_messages.db"
-    output_csv = getenv_robust("OUTPUT_CSV") or "telegram_messages.csv"
-    days_back = env_int("DAYS_BACK", 30)
+    session_name = cli_args.get("session_name") or getenv_robust("SESSION_NAME") or "telethon_session"
+    chat_identifier_raw = cli_args.get("chat") or getenv_robust("CHAT_IDENTIFIER")
+    topic_id_env = cli_args.get("topic_id")
+    if topic_id_env is None:
+        topic_id_env = env_int("TOPIC_ID")
+    output_db = cli_args.get("output_db") or getenv_robust("OUTPUT_DB") or "telegram_messages.db"
+    output_csv = cli_args.get("output_csv") or getenv_robust("OUTPUT_CSV") or "telegram_messages.csv"
+    days_back = cli_args.get("days_back")
+    if days_back is None:
+        days_back = env_int("DAYS_BACK", 30)
+    edit_lookback_days = cli_args.get("edit_lookback_days")
+    if edit_lookback_days is None:
+        # If not set, the scraper will default to DAYS_BACK later
+        edit_lookback_days = env_int("EDIT_LOOKBACK_DAYS")
 
     if api_id is None or not api_hash:
         raise RuntimeError("Please set API_ID and API_HASH in environment variables or .env file.")
@@ -65,6 +80,7 @@ def load_config():
         "output_db": output_db,
         "output_csv": output_csv,
         "days_back": days_back,
+        "edit_lookback_days": edit_lookback_days,
     }
 
 
@@ -211,6 +227,10 @@ def init_db(db_path: str):
         """
     )
 
+    # Refresh columns after creating the table (new DBs will have all columns already).
+    cur.execute("PRAGMA table_info(messages)")
+    existing_cols = {row[1] for row in cur.fetchall()}
+
     # If table existed before, ensure new columns exist.
     add_column("chat_id", "INTEGER")
     add_column("topic_id", "INTEGER")
@@ -328,6 +348,7 @@ async def fetch_messages(config):
     db_path = config["output_db"]
     csv_path = config.get("output_csv")
     days_back = config["days_back"]
+    edit_lookback_days_cfg = config.get("edit_lookback_days")
 
     conn = init_db(db_path)
     cur = conn.cursor()
@@ -360,6 +381,8 @@ async def fetch_messages(config):
     if topic_id is not None:
         scope += f" (topic/thread id: {topic_id})"
 
+    logger.info(f"Scraping messages from {scope} for the last {days_back} days...")
+    logger.info(f"Cutoff date (UTC): {cutoff.isoformat()}")
     print(f"Scraping messages from {scope} for the last {days_back} days...")
     print(f"Cutoff date (UTC): {cutoff.isoformat()}")
 
@@ -491,7 +514,7 @@ async def fetch_messages(config):
         await client.connect()
 
     # Pass B: scan recent window for edits/deletes (default = DAYS_BACK; tune with EDIT_LOOKBACK_DAYS)
-    edit_lookback_days = int(os.getenv("EDIT_LOOKBACK_DAYS", str(days_back)))
+    edit_lookback_days = int(edit_lookback_days_cfg) if edit_lookback_days_cfg is not None else int(os.getenv("EDIT_LOOKBACK_DAYS", str(days_back)))
     edit_cutoff = now_utc - timedelta(days=edit_lookback_days)
 
     try:
@@ -606,7 +629,29 @@ async def fetch_messages(config):
 
 
 def main():
-    config = load_config()
+    parser = argparse.ArgumentParser(description="Scrape Telegram messages to SQLite/CSV/JSONL using Telethon.")
+    parser.add_argument("--chat", help="Chat identifier: username/@username or t.me link (optionally including topic id).")
+    parser.add_argument("--topic-id", type=int, help="Forum topic/thread id. Overrides topic id parsed from URL/env.")
+    parser.add_argument("--days-back", type=int, help="How many days back to scrape (e.g. 365 for ~12 months).")
+    parser.add_argument("--edit-lookback-days", type=int, help="How many days back to rescan for edits/deletions.")
+    parser.add_argument("--output-db", help="SQLite DB file path (default from .env OUTPUT_DB).")
+    parser.add_argument("--output-csv", help="CSV output path (default from .env OUTPUT_CSV).")
+    parser.add_argument("--session-name", help="Telethon session name (default from .env SESSION_NAME).")
+
+    args = parser.parse_args()
+    cli = {
+        "chat": args.chat,
+        "topic_id": args.topic_id,
+        "days_back": args.days_back,
+        "edit_lookback_days": args.edit_lookback_days,
+        "output_db": args.output_db,
+        "output_csv": args.output_csv,
+        "session_name": args.session_name,
+    }
+    # Remove None values so env/.env remains the fallback.
+    cli = {k: v for k, v in cli.items() if v is not None}
+
+    config = load_config(cli)
     asyncio.run(fetch_messages(config))
 
 

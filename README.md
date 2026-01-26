@@ -73,6 +73,26 @@ INCLUDE_SERVICE=0
 
 ---
 
+## Maintenance & Best Practices
+
+See the following guides:
+- `MAINTENANCE.md` - Maintenance procedures and schedules
+- `BEST_PRACTICES.md` - Coding standards and best practices
+- `TROUBLESHOOTING.md` - Common issues and solutions
+
+### Quick Maintenance
+
+```powershell
+# Run all maintenance tasks
+python maintenance.py --all
+
+# Check database health
+python maintenance.py --check-dbs
+
+# Cleanup old files
+python cleanup.py
+```
+
 ## Run the scraper
 
 First run will prompt for:
@@ -116,3 +136,63 @@ JSONL format: one JSON object per line, UTF‑8, Cyrillic preserved (`ensure_asc
 - **Do not commit `.env` or session files**. They contain secrets and login session data.
 - Telegram has rate limits; the scraper includes basic `FloodWait` handling.
 - Deletion detection is **best-effort** within the configured window.
+
+---
+
+## Web UI (local)
+
+This repo includes a minimal local web interface in `web_app.py`:
+
+- paste a Telegram link (channel/group/topic)
+- validate that it exists
+- see **earliest message month/year** (fast probe)
+- start a scrape job (currently **full history** into a separate DB per job)
+
+## Running the Web Server
+
+**Important:** Use the startup script to avoid port conflicts:
+
+```powershell
+python start_server.py
+```
+
+Or manually:
+
+```powershell
+python -m uvicorn web_app:app --reload --port 8000
+```
+
+### Troubleshooting: Port Already in Use
+
+If you see "port already in use" errors or the server seems to serve old code:
+
+1. **Use the startup script** (`start_server.py`) - it automatically kills old processes
+2. **Or manually kill processes:**
+   ```powershell
+   # Find processes on port 8000
+   netstat -ano | findstr :8000
+   
+   # Kill them (replace PID with actual process ID)
+   taskkill /F /PID <PID>
+   ```
+3. **Or use a different port:**
+   ```powershell
+   python -m uvicorn web_app:app --reload --port 8001
+   ```
+
+**Note:** The web interface has been removed. Only API endpoints are available.
+
+### API Endpoints
+
+- `POST /validate` - Validate a Telegram chat/channel
+- `POST /scrape` - Start a scraping job
+- `GET /status/{job_id}` - Get job status
+- `GET /download/{job_id}/{kind}` - Download results (csv/jsonl)
+- `GET /health` - System health check
+- `GET /health/database/{db_name}` - Database health check
+- `GET /api/databases` - List all databases
+- `GET /api/stats/{db_name}` - Get database statistics
+- `GET /api/chat-info/{chat_identifier}` - Get chat info from Telegram
+- `POST /api/update/{db_name}` - Update a database
+- `DELETE /api/delete/{db_name}` - Archive a database
+- `POST /api/cleanup-archives` - Clean up old archives

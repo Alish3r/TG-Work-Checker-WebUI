@@ -1,9 +1,59 @@
-﻿.env
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Python
 .venv/
+venv/
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Session files
 *.session*
-telethon_session.session
-telegram_messages.db
-telegram_messages.csv
-chatgpt_export.jsonl
+telethon_session*.session
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Export files
+*.csv
+*.jsonl
+*.json
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+temp_*.db
+check_*.py
+*.tmp
+
+# Archives
+archived/
+*.zip
+*.tar.gz
+
+# Exports directory (keep structure, ignore contents)
+exports/*
+!exports/.gitkeep
+merged/*
+!merged/.gitkeep
