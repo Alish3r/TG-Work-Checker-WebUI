@@ -68,3 +68,21 @@ exports/*
 !exports/.gitkeep
 merged/*
 !merged/.gitkeep
+# IDE / Editor
+.cursor/
+# Env and secrets
+.env.*
+!.env.example
+*.pem
+# Dependencies and build
+node_modules/
+*.pyc
+dist/
+build/
+*.egg-info/
+.eggs/
+.terraform/
+# Logs and temp
+.cache/
+tmp/
+temp/
